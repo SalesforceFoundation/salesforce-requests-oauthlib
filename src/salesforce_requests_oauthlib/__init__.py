@@ -66,7 +66,8 @@ class SalesforceOAuth2Session(OAuth2Session):
                  sandbox=False,
                  local_server_settings=('localhost', 60443),
                  password=None,
-                 ignore_cached_refresh_tokens=False):
+                 ignore_cached_refresh_tokens=False,
+                 version=None):
 
         self.client_secret = client_secret
         self.username = username
@@ -138,6 +139,13 @@ class SalesforceOAuth2Session(OAuth2Session):
                 else:
                     self.launch_password_flow()
 
+        self.version = version
+        if self.version is None:
+            self.use_latest_version()
+
+    def use_latest_version(self):
+        self.version = self.get('/services/data/').json()[-1]
+
     def launch_webbrowser_flow(self):
         webbrowser.open(
             self.authorization_url(
@@ -193,8 +201,20 @@ class SalesforceOAuth2Session(OAuth2Session):
         )
 
     def request(self, *args, **kwargs):
+        version_substitution = True
+        if 'version_substitution' in kwargs:
+            version_substitution = kwargs['version_substitution']
+
         # Not checking the first two args for sanity - seems like overkill.
         url = args[1]
+
+        if version_substitution:
+            url = url.replace('vXX.X', 'v{0}'.format(
+                str(self.version))
+                    if hasattr(self, 'version') and self.version is not None
+                    else ''
+            )
+
         if 'instance_url' in self.token and url.startswith('/'):
             # Then it's relative
             # We append the instance_url for convenience
