@@ -144,7 +144,7 @@ class SalesforceOAuth2Session(OAuth2Session):
             self.use_latest_version()
 
     def use_latest_version(self):
-        self.version = self.get('/services/data/').json()[-1]
+        self.version = self.get('/services/data/').json()[-1]['version']
 
     def launch_webbrowser_flow(self):
         webbrowser.open(
