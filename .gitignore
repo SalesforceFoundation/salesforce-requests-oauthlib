@@ -11,3 +11,6 @@ build
 dist
 
 .*.swp
+.coverage
+coverage
+.cache
