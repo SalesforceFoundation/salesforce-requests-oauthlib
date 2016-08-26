@@ -17,18 +17,18 @@ View test coverage results at ``./coverage``.
 Credits
 -------
 
-- `Distribute`_
 - `modern-package-template`_
 - `requests-oauthlib`_
 - `requests`_
 - `oauthlib`_
+- `executor`_
 - `py.test`_
 - `pytest-cov`_
 
-.. _Distribute: http://pypi.python.org/pypi/distribute
 .. _`modern-package-template`: http://pypi.python.org/pypi/modern-package-template
 .. _`requests-oauthlib`: https://pypi.python.org/pypi/requests-oauthlib
 .. _`requests`: https://pypi.python.org/pypi/requests
 .. _`oauthlib`: https://pypi.python.org/pypi/oauthlib
+.. _`executor`: https://pypi.python.org/pypi/executor
 .. _`py.test`: http://doc.pytest.org/en/latest/index.html
 .. _`pytest-cov`: https://pypi.python.org/pypi/pytest-cov
