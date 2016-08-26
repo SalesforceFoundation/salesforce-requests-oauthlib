@@ -74,9 +74,7 @@ def test_password_flow(get_oauth_info, setup_local_webserver_key):
         ignore_cached_refresh_tokens=True
     )
     newest_version = session.get('/services/data/').json()[-1]
-    response = session.get('/services/data/v{0}/sobjects/Contact'.format(
-        newest_version['version']
-    )).json()
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
 
 
@@ -90,9 +88,7 @@ def test_webbrowser_flow(get_oauth_info, setup_local_webserver_key):
         ignore_cached_refresh_tokens=True
     )
     newest_version = session.get('/services/data/').json()[-1]
-    response = session.get('/services/data/v{0}/sobjects/Contact'.format(
-        newest_version['version']
-    )).json()
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
 
     # Test that refresh token recovery works
