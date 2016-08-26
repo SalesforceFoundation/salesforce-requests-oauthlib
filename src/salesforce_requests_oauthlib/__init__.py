@@ -1,3 +1,5 @@
+# TODO: saved refresh tokens may not play well with multiple clients running
+#       at once
 import os.path
 import BaseHTTPServer
 import thread
