@@ -37,32 +37,37 @@ test_settings_path = 'test_settings'
 
 @fixture(scope='module')
 def get_oauth_info():
-    # Yes, it's annoying that you can't see the three of these that are not
+    # Yes, it's annoying that you can't see these that are not
     # secret echoed.  But getpass() is smart about where it opens the input
     # stream, so I'm using it for now.
+    oauth_client_id = getpass(
+        'Enter full path to a test config file, or '
+        'enter an oauth2 client identifier: '
+    )
+
+    config_fileh = None
+    try:
+        config_fileh = open(oauth_client_id, 'r')
+    except IOError:
+        client_secret = getpass('Enter oauth2 client secret: ')
+        username1 = getpass('Enter first username: ')
+        sandbox = getpass('Enter yes if sandbox: ') == 'yes'
+    else:
+        lines = config_fileh.readlines()
+        oauth_client_id = lines[0].rstrip()
+        client_secret = lines[1].rstrip()
+        username1 = lines[2].rstrip()
+        sandbox = lines[3].rstrip() == 'yes'
+
     return (
-        getpass('Enter oauth2 client identifier: '),
-        getpass('Enter oauth2 client secret: '),
-        getpass('Enter username: '),
-        getpass('Enter yes if sandbox: ') == 'yes'
+        oauth_client_id,
+        client_secret,
+        username1,
+        sandbox
     )
 
 
-@fixture(scope='module')
-def setup_local_webserver_key(tmpdir_factory, request):
-    settings_dir = tmpdir_factory.mktemp(test_settings_path)
-    SalesforceOAuth2Session.generate_local_webserver_key(
-        settings_path=str(settings_dir)
-    )
-
-    def fin():
-        settings_dir.remove()
-    request.addfinalizer(fin)
-
-    return str(settings_dir)
-
-
-def test_password_flow(get_oauth_info, setup_local_webserver_key):
+def test_password_flow(get_oauth_info):
     session = SalesforceOAuth2Session(
         get_oauth_info[0],
         get_oauth_info[1],
@@ -78,13 +83,12 @@ def test_password_flow(get_oauth_info, setup_local_webserver_key):
     assert u'objectDescribe' in response
 
 
-def test_webbrowser_flow(get_oauth_info, setup_local_webserver_key):
+def test_webbrowser_flow(get_oauth_info):
     session = SalesforceOAuth2Session(
         get_oauth_info[0],
         get_oauth_info[1],
         get_oauth_info[2],
-        setup_local_webserver_key,
-        get_oauth_info[3],
+        sandbox=get_oauth_info[3],
         ignore_cached_refresh_tokens=True
     )
     newest_version = session.get('/services/data/').json()[-1]
@@ -96,8 +100,7 @@ def test_webbrowser_flow(get_oauth_info, setup_local_webserver_key):
         get_oauth_info[0],
         get_oauth_info[1],
         get_oauth_info[2],
-        setup_local_webserver_key,
-        get_oauth_info[3]
+        sandbox=get_oauth_info[3]
     )
     response = session.get('/services/data/v{0}/sobjects/Contact'.format(
         newest_version['version']
