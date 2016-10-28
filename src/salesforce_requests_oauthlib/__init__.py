@@ -33,9 +33,7 @@
 import os.path
 import BaseHTTPServer
 import thread
-from executor import execute
 import webbrowser
-import ssl
 import pickle
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError

@@ -78,7 +78,6 @@ def test_password_flow(get_oauth_info):
         )),
         ignore_cached_refresh_tokens=True
     )
-    newest_version = session.get('/services/data/').json()[-1]
     response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
 
