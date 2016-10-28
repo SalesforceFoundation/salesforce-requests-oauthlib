@@ -77,22 +77,6 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 
 class SalesforceOAuth2Session(OAuth2Session):
-    @staticmethod
-    def generate_local_webserver_key(file_basename='server',
-                                     settings_path=None):
-        if settings_path is None:
-            settings_path = default_settings_path
-
-        command = 'mkdir -p {0} && openssl req -nodes -new -x509 ' \
-                  '-keyout {1} ' \
-                  '-out {2} ' \
-                  '-subj "/C=/ST=/L=/O=/OU=/CN=localhost"'.format(
-                      settings_path,
-                      os.path.join(settings_path, 'server.key'),
-                      os.path.join(settings_path, 'server.cert')
-                  )
-        execute(command)
-
     def __init__(self, client_id, client_secret, username,
                  settings_path=None,
                  sandbox=False,
@@ -193,13 +177,6 @@ class SalesforceOAuth2Session(OAuth2Session):
         )
 
         httpd.timeout = 30
-
-        httpd.socket = ssl.wrap_socket(
-            httpd.socket,
-            keyfile=os.path.join(self.settings_path, 'server.key'),
-            certfile=os.path.join(self.settings_path, 'server.cert'),
-            server_side=True
-        )
 
         httpd.serve_forever()
         httpd.server_close()
