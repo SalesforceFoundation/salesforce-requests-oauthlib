@@ -58,20 +58,21 @@ token_url_template = base_url_template.format(
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
-        self.server.oauth2_full_path = 'https://{0}:{1}{2}'.format(
-            self.server.server_name,
-            str(self.server.server_port),
-            self.path
-        )
-        self.send_response(200, 'OK')
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
+        if 'code=' in self.path:
+            self.server.oauth2_full_path = 'https://{0}:{1}{2}'.format(
+                self.server.server_name,
+                str(self.server.server_port),
+                self.path
+            )
+            self.send_response(200, 'OK')
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
 
-        def shutdown_server(server):
-            server.shutdown()
+            def shutdown_server(server):
+                server.shutdown()
 
-        thread.start_new_thread(shutdown_server, (self.server,))
+            thread.start_new_thread(shutdown_server, (self.server,))
 
 
 class SalesforceOAuth2Session(OAuth2Session):
