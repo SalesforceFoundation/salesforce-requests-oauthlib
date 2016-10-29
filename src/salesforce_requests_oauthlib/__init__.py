@@ -31,10 +31,12 @@
 # TODO: saved refresh tokens may not play well with multiple clients running
 #       at once
 import os.path
+import os
 import BaseHTTPServer
 import thread
 import webbrowser
 import pickle
+import errno
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient
@@ -113,6 +115,13 @@ class SalesforceOAuth2Session(OAuth2Session):
         if settings_path is None:
             settings_path = default_settings_path
         self.settings_path = settings_path
+
+        if not os.path.exists(self.settings_path):
+            try:
+                os.makedirs(self.settings_path)
+            except OSError as e: # Guard against race condition
+                if e.errno != errno.EEXIST:
+                    raise e
 
         self.refresh_token_filename = os.path.join(
             self.settings_path,
