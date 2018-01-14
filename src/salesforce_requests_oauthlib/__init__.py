@@ -30,10 +30,16 @@
 
 # TODO: saved refresh tokens may not play well with multiple clients running
 #       at once
+try:
+    import BaseHTTPServer
+except ImportError:
+    import http.server as BaseHTTPServer
+try:
+    import thread
+except ImportError:
+    import _thread as thread
 import os.path
 import os
-import BaseHTTPServer
-import thread
 import webbrowser
 import pickle
 import errno
@@ -132,7 +138,7 @@ class SalesforceOAuth2Session(OAuth2Session):
 
         if not ignore_cached_refresh_tokens:
             try:
-                with open(self.refresh_token_filename) as fileh:
+                with open(self.refresh_token_filename, 'rb') as fileh:
                     saved_refresh_tokens = pickle.load(fileh)
                     if self.username in saved_refresh_tokens:
                         refresh_token = saved_refresh_tokens[self.username]
@@ -198,14 +204,14 @@ class SalesforceOAuth2Session(OAuth2Session):
 
         saved_refresh_tokens = {}
         try:
-            with open(self.refresh_token_filename, 'r') as fileh:
+            with open(self.refresh_token_filename, 'rb') as fileh:
                 saved_refresh_tokens = pickle.load(fileh)
         except IOError:
             pass
 
         saved_refresh_tokens[self.username] = self.token['refresh_token']
 
-        with open(self.refresh_token_filename, 'w') as fileh:  # Yes, overwrite
+        with open(self.refresh_token_filename, 'wb') as fileh:  # Yes, overwrite
             pickle.dump(saved_refresh_tokens, fileh)
 
     def launch_password_flow(self):
