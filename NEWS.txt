@@ -1,6 +1,13 @@
 News
 ====
 
+0.1.2
+---
+
+*Release date: 2018-02-02*
+
+* Allow custom domain to be specified for authentication
+
 0.1.1
 ---
 
