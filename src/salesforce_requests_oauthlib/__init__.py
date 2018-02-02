@@ -90,19 +90,28 @@ class SalesforceOAuth2Session(OAuth2Session):
                  local_server_settings=('localhost', 60443),
                  password=None,
                  ignore_cached_refresh_tokens=False,
-                 version=None):
+                 version=None,
+                 custom_domain=None):
 
         self.client_secret = client_secret
         self.username = username
         self.password = password
         self.local_server_settings = local_server_settings
-        self.token_url = token_url_template.format(
-            'test' if sandbox else 'login'
-        )
-        # Avoid name collision
-        self.authorization_url_location = authorization_url_template.format(
-            'test' if sandbox else 'login'
-        )
+        if custom_domain is not None:
+            self.token_url = token_url_template.format(
+                '{0}.my'.format(custom_domain)
+            )
+            self.authorization_url_location = authorization_url_template.format(
+                '{0}.my'.format(custom_domain)
+            )
+        else:
+            self.token_url = token_url_template.format(
+                'test' if sandbox else 'login'
+            )
+            # Avoid name collision
+            self.authorization_url_location = authorization_url_template.format(
+                'test' if sandbox else 'login'
+            )
 
         self.callback_url = 'https://{0}:{1}'.format(
             self.local_server_settings[0],

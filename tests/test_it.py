@@ -52,18 +52,24 @@ def get_oauth_info():
         client_secret = getpass('Enter oauth2 client secret: ')
         username1 = getpass('Enter first username: ')
         sandbox = getpass('Enter yes if sandbox: ') == 'yes'
+        custom_domain = getpass(
+            'Enter your test org custom domain prefix '
+            '(the first part, before .my.salesforce.com): '
+        )
     else:
         lines = config_fileh.readlines()
         oauth_client_id = lines[0].rstrip()
         client_secret = lines[1].rstrip()
         username1 = lines[2].rstrip()
         sandbox = lines[3].rstrip() == 'yes'
+        custom_domain = lines[4].rstrip()
 
     return (
         oauth_client_id,
         client_secret,
         username1,
-        sandbox
+        sandbox,
+        custom_domain
     )
 
 
@@ -104,4 +110,18 @@ def test_webbrowser_flow(get_oauth_info):
     response = session.get('/services/data/v{0}/sobjects/Contact'.format(
         newest_version['version']
     )).json()
+    assert u'objectDescribe' in response
+
+
+def test_webbrowser_flow_with_custom_domain(get_oauth_info):
+    session = SalesforceOAuth2Session(
+        get_oauth_info[0],
+        get_oauth_info[1],
+        get_oauth_info[2],
+        sandbox=get_oauth_info[3],
+        ignore_cached_refresh_tokens=True,
+        custom_domain=get_oauth_info[4]
+    )
+    newest_version = session.get('/services/data/').json()[-1]
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
