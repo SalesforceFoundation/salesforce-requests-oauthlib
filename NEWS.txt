@@ -1,6 +1,13 @@
 News
 ====
 
+0.1.3
+---
+
+*Release date: 2018-02-20*
+
+* Python's webbrowser module isn't working for chrome as default browser on OS X, so force safari as browser for oauth flow.
+
 0.1.2
 ---
 

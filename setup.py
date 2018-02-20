@@ -6,7 +6,7 @@ README = open(os.path.join(here, 'README.rst')).read()
 NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
-version = '0.1.2'
+version = '0.1.3'
 
 install_requires = [
     # List your project dependencies here.
@@ -27,7 +27,7 @@ setup(name='salesforce-requests-oauthlib',
     author='Adam J. Lincoln',
     author_email='alincoln@salesforce.com',
     url='https://github.com/SalesforceFoundation/salesforce-requests-oauthlib',
-    download_url='https://github.com/SalesforceFoundation/salesforce-requests-oauthlib/tarball/0.1.2',
+    download_url='https://github.com/SalesforceFoundation/salesforce-requests-oauthlib/tarball/0.1.3',
     license='BSD 3-Clause',
     packages=find_packages('src'),
     package_dir = {'': 'src'},include_package_data=True,

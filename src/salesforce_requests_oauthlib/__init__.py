@@ -186,13 +186,26 @@ class SalesforceOAuth2Session(OAuth2Session):
         self.version = self.get('/services/data/').json()[-1]['version']
 
     def launch_webbrowser_flow(self):
-        webbrowser.open(
-            self.authorization_url(
-                self.authorization_url_location
-            )[0],
-            new=2,
-            autoraise=True
-        )
+        # Right now the webbrowser module doesn't properly open chrome when
+        # it's the default browser on OS X.  As a workaround, force safari.
+        import sys
+        if sys.platform == 'darwin':
+            browser = webbrowser.get('safari')
+            browser.open(
+                self.authorization_url(
+                    self.authorization_url_location
+                )[0],
+                new=2,
+                autoraise=True
+            )
+        else:
+            webbrowser.open(
+                self.authorization_url(
+                    self.authorization_url_location
+                )[0],
+                new=2,
+                autoraise=True
+            )
 
         httpd = BaseHTTPServer.HTTPServer(
             self.local_server_settings,
