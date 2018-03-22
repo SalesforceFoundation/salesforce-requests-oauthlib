@@ -45,7 +45,7 @@ import pickle
 import errno
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
-from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient
+from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient, ServiceApplicationClient
 
 default_settings_path = \
     os.path.expanduser('~/.salesforce_requests_oauthlib')
@@ -91,7 +91,8 @@ class SalesforceOAuth2Session(OAuth2Session):
                  password=None,
                  ignore_cached_refresh_tokens=False,
                  version=None,
-                 custom_domain=None):
+                 custom_domain=None,
+                 oauth2client=None):
 
         self.client_secret = client_secret
         self.username = username
@@ -125,61 +126,65 @@ class SalesforceOAuth2Session(OAuth2Session):
         super(SalesforceOAuth2Session, self).__init__(
             client_id=client_id,
             redirect_uri=self.callback_url,
-            client=LegacyApplicationClient(
+            client=oauth2client if oauth2client else LegacyApplicationClient(
                 client_id=client_id
             ) if password is not None else None
         )
 
-        if settings_path is None:
-            settings_path = default_settings_path
-        self.settings_path = settings_path
-
-        if not os.path.exists(self.settings_path):
-            try:
-                os.makedirs(self.settings_path)
-            except OSError as e: # Guard against race condition
-                if e.errno != errno.EEXIST:
-                    raise e
-
-        self.refresh_token_filename = os.path.join(
-            self.settings_path,
-            default_refresh_token_filename
-        )
-
-        refresh_token = None
-
-        if not ignore_cached_refresh_tokens:
-            try:
-                with open(self.refresh_token_filename, 'rb') as fileh:
-                    saved_refresh_tokens = pickle.load(fileh)
-                    if self.username in saved_refresh_tokens:
-                        refresh_token = saved_refresh_tokens[self.username]
-            except IOError:
-                pass
-
-        if refresh_token is None:
-            if self.password is None:
-                self.launch_webbrowser_flow()
-            else:
-                self.launch_password_flow()
+        if isinstance(oauth2client, ServiceApplicationClient):
+            seconds_until_expiration = 180  # make JWT valid for only 3 minutes to prevent reuse later
+            oauth2client.fetch_token(self.token_url, expires_at=time.time() + seconds_until_expiration)
         else:
-            self.token = {
-                'token_type': 'Bearer',
-                'refresh_token': refresh_token,
-                'access_token': 'Would you eat them in a box?'
-            }
+            if settings_path is None:
+                settings_path = default_settings_path
+            self.settings_path = settings_path
 
-            try:
-                self.refresh_token(
-                    self.token_url,
-                    client_id=self.client_id,
-                    client_secret=self.client_secret
-                )
-            except InvalidGrantError:
+            if not os.path.exists(self.settings_path):
+                try:
+                    os.makedirs(self.settings_path)
+                except OSError as e: # Guard against race condition
+                    if e.errno != errno.EEXIST:
+                        raise e
+
+            self.refresh_token_filename = os.path.join(
+                self.settings_path,
+                default_refresh_token_filename
+            )
+
+            refresh_token = None
+
+            if not ignore_cached_refresh_tokens:
+                try:
+                    with open(self.refresh_token_filename, 'rb') as fileh:
+                        saved_refresh_tokens = pickle.load(fileh)
+                        if self.username in saved_refresh_tokens:
+                            refresh_token = saved_refresh_tokens[self.username]
+                except IOError:
+                    pass
+
+            if refresh_token is None:
                 if self.password is None:
                     self.launch_webbrowser_flow()
                 else:
                     self.launch_password_flow()
+            else:
+                self.token = {
+                    'token_type': 'Bearer',
+                    'refresh_token': refresh_token,
+                    'access_token': 'Would you eat them in a box?'
+                }
+
+                try:
+                    self.refresh_token(
+                        self.token_url,
+                        client_id=self.client_id,
+                        client_secret=self.client_secret
+                    )
+                except InvalidGrantError:
+                    if self.password is None:
+                        self.launch_webbrowser_flow()
+                    else:
+                        self.launch_password_flow()
 
         self.version = version
         if self.version is None:
