@@ -132,8 +132,9 @@ class SalesforceOAuth2Session(OAuth2Session):
         )
 
         if isinstance(oauth2client, ServiceApplicationClient):
+            import time
             seconds_until_expiration = 180  # make JWT valid for only 3 minutes to prevent reuse later
-            oauth2client.fetch_token(self.token_url, expires_at=time.time() + seconds_until_expiration)
+            self.fetch_token(self.token_url, expires_at=time.time() + seconds_until_expiration)
         else:
             if settings_path is None:
                 settings_path = default_settings_path
