@@ -113,6 +113,9 @@ class SalesforceOAuth2Session(OAuth2Session):
                 'test' if sandbox else 'login'
             )
 
+        # NOTE: even though this says https://, if the Salesforce connected app's
+        # Callback URL uses http://localhost, SF will redirect to http://localhost,
+        # so the non-HTTPS HTTPServer() in launch_webbrowser_flow() will still work
         self.callback_url = 'https://{0}:{1}'.format(
             self.local_server_settings[0],
             str(self.local_server_settings[1])
