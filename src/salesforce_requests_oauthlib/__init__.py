@@ -40,12 +40,14 @@ except ImportError:
     import _thread as thread
 import os.path
 import os
+import time
 import webbrowser
 import pickle
 import errno
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
-from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient, ServiceApplicationClient
+from oauthlib.oauth2.rfc6749.clients import (LegacyApplicationClient,
+                                             ServiceApplicationClient)
 
 default_settings_path = \
     os.path.expanduser('~/.salesforce_requests_oauthlib')
@@ -114,27 +116,33 @@ class SalesforceOAuth2Session(OAuth2Session):
                 'test' if sandbox else 'login'
             )
 
-        # NOTE: even though this says https://, if the Salesforce connected app's
-        # Callback URL uses http://localhost, SF will redirect to http://localhost,
-        # so the non-HTTPS HTTPServer() in launch_webbrowser_flow() will still work
+        # NOTE: even though this says https://, if the Salesforce connected
+        # app's Callback URL uses http://localhost, SF will redirect to
+        # http://localhost, so the non-HTTPS HTTPServer() in
+        # launch_webbrowser_flow() will still work
         self.callback_url = 'https://{0}:{1}'.format(
             self.local_server_settings[0],
             str(self.local_server_settings[1])
         )
 
+        if oauth2client:
+            client = oauth2client
+        elif password is not None:
+            client = LegacyApplicationClient(client_id=client_id)
+        else:
+            client = None
+
         # Side effect here is to set self.client_id
         super(SalesforceOAuth2Session, self).__init__(
             client_id=client_id,
             redirect_uri=self.callback_url,
-            client=oauth2client if oauth2client else LegacyApplicationClient(
-                client_id=client_id
-            ) if password is not None else None
+            client=client
         )
 
         if isinstance(oauth2client, ServiceApplicationClient):
-            import time
-            seconds_until_expiration = 180  # make JWT valid for only 3 minutes to prevent reuse later
-            self.fetch_token(self.token_url, expires_at=time.time() + seconds_until_expiration)
+            # make JWT valid for only 3 minutes to prevent reuse later
+            expires_at = time.time() + 180
+            self.fetch_token(self.token_url, expires_at=expires_at)
         else:
             if settings_path is None:
                 settings_path = default_settings_path
