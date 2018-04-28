@@ -155,10 +155,7 @@ class SalesforceOAuth2Session(OAuth2Session):
                 pass
 
         if refresh_token is None:
-            if self.password is None:
-                self.launch_webbrowser_flow()
-            else:
-                self.launch_password_flow()
+            self.launch_flow()
         else:
             self.token = {
                 'token_type': 'Bearer',
@@ -166,21 +163,27 @@ class SalesforceOAuth2Session(OAuth2Session):
                 'access_token': 'Would you eat them in a box?'
             }
 
-            try:
-                self.refresh_token(
-                    self.token_url,
-                    client_id=self.client_id,
-                    client_secret=self.client_secret
-                )
-            except InvalidGrantError:
-                if self.password is None:
-                    self.launch_webbrowser_flow()
-                else:
-                    self.launch_password_flow()
+            self.refresh_token()
 
         self.version = version
         if self.version is None:
             self.use_latest_version()
+
+    def launch_flow(self):
+        if self.password is None:
+            self.launch_webbrowser_flow()
+        else:
+            self.launch_password_flow()
+
+    def refresh_token(self):
+        try:
+            super(SalesforceOAuth2Session, self).refresh_token(
+                self.token_url,
+                client_id=self.client_id,
+                client_secret=self.client_secret
+            )
+        except InvalidGrantError:
+            self.launch_flow()
 
     def use_latest_version(self):
         self.version = self.get('/services/data/').json()[-1]['version']
