@@ -30,7 +30,9 @@
 
 from pytest import fixture
 from getpass import getpass
+from collections import namedtuple
 from salesforce_requests_oauthlib import SalesforceOAuth2Session
+from oauthlib.oauth2 import ServiceApplicationClient
 
 test_settings_path = 'test_settings'
 
@@ -56,6 +58,7 @@ def get_oauth_info():
             'Enter your test org custom domain prefix '
             '(the first part, before .my.salesforce.com): '
         )
+        key_file = getpass('Enter path to private key file for X509 certificate: ')
     else:
         lines = config_fileh.readlines()
         oauth_client_id = lines[0].rstrip()
@@ -63,24 +66,54 @@ def get_oauth_info():
         username1 = lines[2].rstrip()
         sandbox = lines[3].rstrip() == 'yes'
         custom_domain = lines[4].rstrip()
+        key_file = lines[5].rstrip()
 
-    return (
+    oauth_info = namedtuple('oauth_info', [
+        'oauth_client_id',
+        'client_secret',
+        'username',
+        'sandbox',
+        'custom_domain',
+        'key_file',
+    ])
+    return oauth_info(
         oauth_client_id,
         client_secret,
         username1,
         sandbox,
-        custom_domain
+        custom_domain,
+        key_file,
     )
+
+
+def test_jwt_bearer_token_flow(get_oauth_info):
+    subdomain = 'test' if get_oauth_info.sandbox else 'login'
+    client = ServiceApplicationClient(
+        get_oauth_info.oauth_client_id,
+        open(get_oauth_info.key_file).read(),
+        get_oauth_info.username,
+        get_oauth_info.oauth_client_id,
+        audience='https://%s.salesforce.com' % subdomain
+    )
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        None,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
+        oauth2client=client
+    )
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    assert u'objectDescribe' in response
 
 
 def test_password_flow(get_oauth_info):
     session = SalesforceOAuth2Session(
-        get_oauth_info[0],
-        get_oauth_info[1],
-        get_oauth_info[2],
-        sandbox=get_oauth_info[3],
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
         password=getpass('Enter password for {0}: '.format(
-            get_oauth_info[2]
+            get_oauth_info.username
         )),
         ignore_cached_refresh_tokens=True
     )
@@ -90,10 +123,10 @@ def test_password_flow(get_oauth_info):
 
 def test_webbrowser_flow(get_oauth_info):
     session = SalesforceOAuth2Session(
-        get_oauth_info[0],
-        get_oauth_info[1],
-        get_oauth_info[2],
-        sandbox=get_oauth_info[3],
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
         ignore_cached_refresh_tokens=True
     )
     newest_version = session.get('/services/data/').json()[-1]
@@ -102,10 +135,10 @@ def test_webbrowser_flow(get_oauth_info):
 
     # Test that refresh token recovery works
     session = SalesforceOAuth2Session(
-        get_oauth_info[0],
-        get_oauth_info[1],
-        get_oauth_info[2],
-        sandbox=get_oauth_info[3]
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox
     )
     response = session.get('/services/data/v{0}/sobjects/Contact'.format(
         newest_version['version']
@@ -115,12 +148,12 @@ def test_webbrowser_flow(get_oauth_info):
 
 def test_webbrowser_flow_with_custom_domain(get_oauth_info):
     session = SalesforceOAuth2Session(
-        get_oauth_info[0],
-        get_oauth_info[1],
-        get_oauth_info[2],
-        sandbox=get_oauth_info[3],
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
         ignore_cached_refresh_tokens=True,
-        custom_domain=get_oauth_info[4]
+        custom_domain=get_oauth_info.custom_domain
     )
     newest_version = session.get('/services/data/').json()[-1]
     response = session.get('/services/data/vXX.X/sobjects/Contact').json()

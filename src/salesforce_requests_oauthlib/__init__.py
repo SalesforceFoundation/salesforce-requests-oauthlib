@@ -40,12 +40,14 @@ except ImportError:
     import _thread as thread
 import os.path
 import os
+import time
 import webbrowser
 import pickle
 import errno
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
-from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient
+from oauthlib.oauth2.rfc6749.clients import (LegacyApplicationClient,
+                                             ServiceApplicationClient)
 
 default_settings_path = \
     os.path.expanduser('~/.salesforce_requests_oauthlib')
@@ -91,7 +93,8 @@ class SalesforceOAuth2Session(OAuth2Session):
                  password=None,
                  ignore_cached_refresh_tokens=False,
                  version=None,
-                 custom_domain=None):
+                 custom_domain=None,
+                 oauth2client=None):
 
         self.client_secret = client_secret
         self.username = username
@@ -113,57 +116,71 @@ class SalesforceOAuth2Session(OAuth2Session):
                 'test' if sandbox else 'login'
             )
 
+        # NOTE: even though this says https://, if the Salesforce connected
+        # app's Callback URL uses http://localhost, SF will redirect to
+        # http://localhost, so the non-HTTPS HTTPServer() in
+        # launch_webbrowser_flow() will still work
         self.callback_url = 'https://{0}:{1}'.format(
             self.local_server_settings[0],
             str(self.local_server_settings[1])
         )
 
+        if oauth2client:
+            client = oauth2client
+        elif password is not None:
+            client = LegacyApplicationClient(client_id=client_id)
+        else:
+            client = None
+
         # Side effect here is to set self.client_id
         super(SalesforceOAuth2Session, self).__init__(
             client_id=client_id,
             redirect_uri=self.callback_url,
-            client=LegacyApplicationClient(
-                client_id=client_id
-            ) if password is not None else None
+            client=client
         )
 
-        if settings_path is None:
-            settings_path = default_settings_path
-        self.settings_path = settings_path
-
-        if not os.path.exists(self.settings_path):
-            try:
-                os.makedirs(self.settings_path)
-            except OSError as e: # Guard against race condition
-                if e.errno != errno.EEXIST:
-                    raise e
-
-        self.refresh_token_filename = os.path.join(
-            self.settings_path,
-            default_refresh_token_filename
-        )
-
-        refresh_token = None
-
-        if not ignore_cached_refresh_tokens:
-            try:
-                with open(self.refresh_token_filename, 'rb') as fileh:
-                    saved_refresh_tokens = pickle.load(fileh)
-                    if self.username in saved_refresh_tokens:
-                        refresh_token = saved_refresh_tokens[self.username]
-            except IOError:
-                pass
-
-        if refresh_token is None:
-            self.launch_flow()
+        if isinstance(oauth2client, ServiceApplicationClient):
+            # make JWT valid for only 3 minutes to prevent reuse later
+            expires_at = time.time() + 180
+            self.fetch_token(self.token_url, expires_at=expires_at)
         else:
-            self.token = {
-                'token_type': 'Bearer',
-                'refresh_token': refresh_token,
-                'access_token': 'Would you eat them in a box?'
-            }
+            if settings_path is None:
+                settings_path = default_settings_path
+            self.settings_path = settings_path
 
-            self.refresh_token()
+            if not os.path.exists(self.settings_path):
+                try:
+                    os.makedirs(self.settings_path)
+                except OSError as e: # Guard against race condition
+                    if e.errno != errno.EEXIST:
+                        raise e
+
+            self.refresh_token_filename = os.path.join(
+                self.settings_path,
+                default_refresh_token_filename
+            )
+
+            refresh_token = None
+
+            if not ignore_cached_refresh_tokens:
+                try:
+                    with open(self.refresh_token_filename, 'rb') as fileh:
+                        saved_refresh_tokens = pickle.load(fileh)
+                        if self.username in saved_refresh_tokens:
+                            refresh_token = saved_refresh_tokens[self.username]
+                except IOError:
+                    pass
+
+            if refresh_token is None:
+                self.launch_flow()
+            else:
+                self.token = {
+                    'token_type': 'Bearer',
+                    'refresh_token': refresh_token,
+                    'access_token': 'Would you eat them in a box?'
+                }
+
+                self.refresh_token()
 
         self.version = version
         if self.version is None:
