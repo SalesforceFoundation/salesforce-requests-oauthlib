@@ -1,6 +1,15 @@
 News
 ====
 
+0.1.4
+---
+
+*Release date: 2018-04-30*
+
+* Thanks to @paulie4 for the patch to allow an externally created oauthlib client.
+* New AUTHORS file
+* When token refresh fails, launch the appropriate authentication flow.  Allows for username/password clients to live past the session timeout.
+
 0.1.3
 ---
 
