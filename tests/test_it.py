@@ -58,7 +58,9 @@ def get_oauth_info():
             'Enter your test org custom domain prefix '
             '(the first part, before .my.salesforce.com): '
         )
-        key_file = getpass('Enter path to private key file for X509 certificate: ')
+        key_file = getpass(
+            'Enter path to private key file for X509 certificate: '
+        )
     else:
         lines = config_fileh.readlines()
         oauth_client_id = lines[0].rstrip()
@@ -87,13 +89,14 @@ def get_oauth_info():
 
 
 def test_jwt_bearer_token_flow(get_oauth_info):
-    subdomain = 'test' if get_oauth_info.sandbox else 'login'
     client = ServiceApplicationClient(
         get_oauth_info.oauth_client_id,
         open(get_oauth_info.key_file).read(),
         get_oauth_info.username,
         get_oauth_info.oauth_client_id,
-        audience='https://%s.salesforce.com' % subdomain
+        audience='https://{0}.salesforce.com'.format(
+            'test' if get_oauth_info.sandbox else 'login'
+        )
     )
     session = SalesforceOAuth2Session(
         get_oauth_info.oauth_client_id,

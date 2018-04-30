@@ -46,8 +46,8 @@ import pickle
 import errno
 from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
-from oauthlib.oauth2.rfc6749.clients import (LegacyApplicationClient,
-                                             ServiceApplicationClient)
+from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient
+from oauthlib.oauth2.rfc6749.clients import ServiceApplicationClient
 
 default_settings_path = \
     os.path.expanduser('~/.salesforce_requests_oauthlib')
