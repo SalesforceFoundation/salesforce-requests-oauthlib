@@ -31,7 +31,11 @@
 from pytest import fixture
 from getpass import getpass
 from collections import namedtuple
+import tempfile
+import os
 from salesforce_requests_oauthlib import SalesforceOAuth2Session
+from salesforce_requests_oauthlib import HiddenLocalStorage
+from salesforce_requests_oauthlib import PostgresStorage
 from oauthlib.oauth2 import ServiceApplicationClient
 
 test_settings_path = 'test_settings'
@@ -142,6 +146,80 @@ def test_webbrowser_flow(get_oauth_info):
         get_oauth_info.client_secret,
         get_oauth_info.username,
         sandbox=get_oauth_info.sandbox
+    )
+    response = session.get('/services/data/v{0}/sobjects/Contact'.format(
+        newest_version['version']
+    )).json()
+    assert u'objectDescribe' in response
+
+
+def test_custom_local_token_storage(get_oauth_info):
+    # Yes, I know this circumvents the point of mkdtemp().  We want to test
+    # the directory creation part of HiddenLocalStorage.
+    temp_dir_path = tempfile.mkdtemp()
+    os.rmdir(temp_dir_path)
+
+    token_storage = HiddenLocalStorage(temp_dir_path)
+
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
+        ignore_cached_refresh_tokens=True,
+        token_storage=token_storage
+    )
+    newest_version = session.get('/services/data/').json()[-1]
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    assert u'objectDescribe' in response
+
+    # Test that refresh token recovery works
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox
+    )
+    response = session.get('/services/data/v{0}/sobjects/Contact'.format(
+        newest_version['version']
+    )).json()
+    assert u'objectDescribe' in response
+
+    # clean up
+    os.remove(token_storage.full_token_path)
+    os.rmdir(temp_dir_path)
+
+
+def test_postgres_token_storage(get_oauth_info):
+    postgres_uri = getpass(
+        'Paste in a Postgres URI for testing:'
+    )
+    if len(postgres_uri) == 0:
+        # Postgres token storage will not be tested
+        assert True
+        return
+
+    token_storage = PostgresStorage(postgres_uri)
+
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
+        ignore_cached_refresh_tokens=True,
+        token_storage=token_storage
+    )
+    newest_version = session.get('/services/data/').json()[-1]
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    assert u'objectDescribe' in response
+
+    # Test that refresh token recovery works
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox,
+        token_storage=token_storage
     )
     response = session.get('/services/data/v{0}/sobjects/Contact'.format(
         newest_version['version']

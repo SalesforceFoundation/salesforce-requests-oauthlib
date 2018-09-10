@@ -48,8 +48,16 @@ from requests_oauthlib import OAuth2Session
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 from oauthlib.oauth2.rfc6749.clients import LegacyApplicationClient
 from oauthlib.oauth2.rfc6749.clients import ServiceApplicationClient
+from abc import ABCMeta
+from abc import abstractmethod
+import six
+import psycopg2
+from psycopg2.extras import execute_values
+from psycopg2.extensions import AsIs
 
-default_settings_path = \
+
+
+default_token_path = \
     os.path.expanduser('~/.salesforce_requests_oauthlib')
 
 default_refresh_token_filename = 'refresh_tokens.pickle'
@@ -64,6 +72,127 @@ authorization_url_template = base_url_template.format(
 token_url_template = base_url_template.format(
     'token'
 )
+
+
+@six.add_metaclass(ABCMeta)
+class TokenStorageMechanism:
+    @abstractmethod
+    def store(self, tokens):
+        pass
+
+    @abstractmethod
+    def retrieve(self):
+        pass
+
+
+class HiddenLocalStorage(TokenStorageMechanism):
+    def __init__(self, token_path=default_token_path):
+        if not os.path.exists(token_path):
+            try:
+                os.makedirs(token_path)
+            except OSError as e:  # Guard against race condition
+                if e.errno != errno.EEXIST:
+                    raise e
+
+        self.full_token_path = os.path.join(
+            token_path,
+            default_refresh_token_filename
+        )
+
+    def store(self, tokens):
+        # Yes, overwrite
+        with open(self.full_token_path, 'wb') as fileh:
+            pickle.dump(tokens, fileh)
+
+    def retrieve(self):
+        try:
+            with open(self.full_token_path, 'rb') as fileh:
+                return pickle.load(fileh)
+        except IOError:
+            return {}
+
+
+class PostgresStorage(TokenStorageMechanism):
+    def __init__(
+        self,
+        database_uri=None,
+        schema_name='salesforce_requests_oauthlib'
+    ):
+        if database_uri is None:
+            database_uri = os.environ['DATABASE_URL']
+
+        self.table_name = 'refresh_tokens'
+        self.schema_name = schema_name
+
+        with psycopg2.connect(database_uri, sslmode='require') as pg_conn:
+            pg_cursor = pg_conn.cursor()
+            pg_cursor.execute(
+                'SELECT COUNT(*) FROM information_schema.schemata '
+                'WHERE schema_name = %s',
+                (self.schema_name,)
+            )
+            schema_count = pg_cursor.fetchone()[0]
+
+            if schema_count == 0:
+                pg_cursor.execute('CREATE SCHEMA %s', (AsIs(self.schema_name),))
+                pg_conn.commit()
+
+            pg_cursor.execute('SET search_path TO %s', (AsIs(self.schema_name),))
+
+            pg_cursor.execute(
+                'SELECT COUNT(*) '
+                'FROM information_schema.tables '
+                'WHERE table_schema = %s '
+                'AND table_name = %s '
+                'AND table_type = %s',
+                (self.schema_name, self.table_name, 'BASE TABLE')
+            )
+            table_count = pg_cursor.fetchone()[0]
+            if table_count == 0:
+                create_table_template = '''CREATE TABLE %s (
+    username text primary key,
+    refresh_token text
+)'''
+                pg_cursor.execute(
+                    create_table_template,
+                    (AsIs(self.table_name),)
+                )
+
+        self.database_uri = database_uri
+
+    def store(self, tokens):
+        with psycopg2.connect(self.database_uri, sslmode='require') as pg_conn:
+            pg_cursor = pg_conn.cursor()
+            pg_cursor.execute('SET search_path TO %s', (AsIs(self.schema_name),))
+            insert_stmt = '{0} %s ON CONFLICT (username) DO UPDATE SET refresh_token = EXCLUDED.refresh_token'.format(
+                pg_cursor.mogrify(
+                    'INSERT INTO %s (username, refresh_token) VALUES',
+                    (AsIs(self.table_name),)
+                ).decode()
+            )
+            execute_values(
+                pg_cursor,
+                insert_stmt,
+                tokens.items()
+            )
+
+    def retrieve(self):
+        to_return = {}
+
+        # We'll reconnect every time, because it might be a long time between
+        # DB access
+        with psycopg2.connect(self.database_uri, sslmode='require') as pg_conn:
+            pg_cursor = pg_conn.cursor()
+            pg_cursor.execute('SET search_path TO %s', (AsIs(self.schema_name),))
+            pg_cursor.execute(
+                'SELECT username, refresh_token FROM %s',
+                (AsIs(self.table_name),)
+            )
+
+            for result in pg_cursor.fetchall():
+                to_return[result[0]] = result[1]
+
+        return to_return
 
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
@@ -87,14 +216,14 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 class SalesforceOAuth2Session(OAuth2Session):
     def __init__(self, client_id, client_secret, username,
-                 settings_path=None,
                  sandbox=False,
                  local_server_settings=('localhost', 60443),
                  password=None,
                  ignore_cached_refresh_tokens=False,
                  version=None,
                  custom_domain=None,
-                 oauth2client=None):
+                 oauth2client=None,
+                 token_storage=None):
 
         self.client_secret = client_secret
         self.username = username
@@ -144,32 +273,20 @@ class SalesforceOAuth2Session(OAuth2Session):
             expires_at = time.time() + 180
             self.fetch_token(self.token_url, expires_at=expires_at)
         else:
-            if settings_path is None:
-                settings_path = default_settings_path
-            self.settings_path = settings_path
+            if token_storage is None:
+                token_storage = HiddenLocalStorage
 
-            if not os.path.exists(self.settings_path):
-                try:
-                    os.makedirs(self.settings_path)
-                except OSError as e: # Guard against race condition
-                    if e.errno != errno.EEXIST:
-                        raise e
-
-            self.refresh_token_filename = os.path.join(
-                self.settings_path,
-                default_refresh_token_filename
-            )
+            if isinstance(token_storage, TokenStorageMechanism):
+                self.token_storage = token_storage
+            else:
+                self.token_storage = token_storage()
 
             refresh_token = None
 
             if not ignore_cached_refresh_tokens:
-                try:
-                    with open(self.refresh_token_filename, 'rb') as fileh:
-                        saved_refresh_tokens = pickle.load(fileh)
-                        if self.username in saved_refresh_tokens:
-                            refresh_token = saved_refresh_tokens[self.username]
-                except IOError:
-                    pass
+                saved_refresh_tokens = self.token_storage.retrieve()
+                if self.username in saved_refresh_tokens:
+                    refresh_token = saved_refresh_tokens[self.username]
 
             if refresh_token is None:
                 self.launch_flow()
@@ -244,17 +361,11 @@ class SalesforceOAuth2Session(OAuth2Session):
             client_secret=self.client_secret
         )
 
-        saved_refresh_tokens = {}
-        try:
-            with open(self.refresh_token_filename, 'rb') as fileh:
-                saved_refresh_tokens = pickle.load(fileh)
-        except IOError:
-            pass
+        saved_refresh_tokens = self.token_storage.retrieve()
 
         saved_refresh_tokens[self.username] = self.token['refresh_token']
 
-        with open(self.refresh_token_filename, 'wb') as fileh:  # Yes, overwrite
-            pickle.dump(saved_refresh_tokens, fileh)
+        self.token_storage.store(saved_refresh_tokens)
 
     def launch_password_flow(self):
         self.fetch_token(

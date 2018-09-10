@@ -12,7 +12,9 @@ install_requires = [
     # List your project dependencies here.
     # For more details, see:
     # http://packages.python.org/distribute/setuptools.html#declaring-dependencies
-    'requests-oauthlib>=0.6.2'
+    'requests-oauthlib>=0.6.2',
+    'six',
+    'psycopg2-binary',
 ]
 
 
