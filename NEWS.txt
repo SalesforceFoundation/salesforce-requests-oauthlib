@@ -1,6 +1,13 @@
 News
 ====
 
+0.1.5
+---
+
+*Release date: 2018-09-10*
+
+* Refresh token persistence is now modular
+
 0.1.4
 ---
 
