@@ -33,7 +33,6 @@ from getpass import getpass
 from collections import namedtuple
 import tempfile
 import os
-import pyperclip
 from salesforce_requests_oauthlib import SalesforceOAuth2Session
 from salesforce_requests_oauthlib import WebServerFlowNeeded
 from salesforce_requests_oauthlib import HiddenLocalStorage
@@ -151,6 +150,17 @@ def test_password_flow(get_oauth_info):
     )
     response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
+
+    query_response = session.query(
+        'SELECT Id FROM Account',
+        get_entire_response=False
+    )
+    assert u'totalSize' in query_response and u'records' in query_response
+
+    query_response = session.query('SELECT Id FROM User')
+    # We don't know what kind of data is in our org, so just make sure we
+    # got something back
+    assert len(query_response) > 0
 
 
 def test_webbrowser_flow(get_oauth_info):
@@ -283,11 +293,9 @@ def test_web_server_flow(get_oauth_info_not_localhost):
     try:
         response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     except WebServerFlowNeeded as e:
-        pyperclip.copy(e.flow_url.encode())
         code_response = getpass(
             'Go to\n\n{0}\n\nwith your browser, and after logging in, '
-            'paste the resulting url here (we have put this link in your '
-            'paste buffer already): '.format(
+            'paste the resulting url here: '.format(
                 e.flow_url
             )
         )
