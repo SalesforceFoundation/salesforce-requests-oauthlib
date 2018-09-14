@@ -33,7 +33,9 @@ from getpass import getpass
 from collections import namedtuple
 import tempfile
 import os
+import pyperclip
 from salesforce_requests_oauthlib import SalesforceOAuth2Session
+from salesforce_requests_oauthlib import WebServerFlowNeeded
 from salesforce_requests_oauthlib import HiddenLocalStorage
 from salesforce_requests_oauthlib import PostgresStorage
 from oauthlib.oauth2 import ServiceApplicationClient
@@ -47,10 +49,27 @@ def get_oauth_info():
     # secret echoed.  But getpass() is smart about where it opens the input
     # stream, so I'm using it for now.
     oauth_client_id = getpass(
-        'Enter full path to a test config file, or '
-        'enter an oauth2 client identifier: '
+        'Enter full path to a test config file using localhost as the '
+        'callback, or enter an oauth2 client identifier: '
     )
 
+    return _get_oauth_info(oauth_client_id)
+
+
+@fixture(scope='module')
+def get_oauth_info_not_localhost():
+    # Yes, it's annoying that you can't see these that are not
+    # secret echoed.  But getpass() is smart about where it opens the input
+    # stream, so I'm using it for now.
+    oauth_client_id = getpass(
+        'Enter full path to a test config file *not* using localhost as the '
+        'callback, or enter an oauth2 client identifier: '
+    )
+
+    return _get_oauth_info(oauth_client_id)
+
+
+def _get_oauth_info(oauth_client_id):
     config_fileh = None
     try:
         config_fileh = open(oauth_client_id, 'r')
@@ -65,6 +84,9 @@ def get_oauth_info():
         key_file = getpass(
             'Enter path to private key file for X509 certificate: '
         )
+        callback_url = getpass(
+            'Enter callback URL configued on the connected app: '
+        )
     else:
         lines = config_fileh.readlines()
         oauth_client_id = lines[0].rstrip()
@@ -73,6 +95,7 @@ def get_oauth_info():
         sandbox = lines[3].rstrip() == 'yes'
         custom_domain = lines[4].rstrip()
         key_file = lines[5].rstrip()
+        callback_url = lines[6].rstrip()
 
     oauth_info = namedtuple('oauth_info', [
         'oauth_client_id',
@@ -81,6 +104,7 @@ def get_oauth_info():
         'sandbox',
         'custom_domain',
         'key_file',
+        'callback_url',
     ])
     return oauth_info(
         oauth_client_id,
@@ -89,6 +113,7 @@ def get_oauth_info():
         sandbox,
         custom_domain,
         key_file,
+        callback_url,
     )
 
 
@@ -239,3 +264,58 @@ def test_webbrowser_flow_with_custom_domain(get_oauth_info):
     newest_version = session.get('/services/data/').json()[-1]
     response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
+
+
+def test_web_server_flow(get_oauth_info_not_localhost):
+    session = SalesforceOAuth2Session(
+        get_oauth_info_not_localhost.oauth_client_id,
+        get_oauth_info_not_localhost.client_secret,
+        get_oauth_info_not_localhost.username,
+        sandbox=get_oauth_info_not_localhost.sandbox,
+        ignore_cached_refresh_tokens=True,
+        force_web_server_flow=True,
+        callback_settings=(
+            get_oauth_info_not_localhost.callback_url,
+            443
+        )
+    )
+
+    try:
+        response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    except WebServerFlowNeeded as e:
+        pyperclip.copy(e.flow_url.encode())
+        code_response = getpass(
+            'Go to\n\n{0}\n\nwith your browser, and after logging in, '
+            'paste the resulting url here (we have put this link in your '
+            'paste buffer already): '.format(
+                e.flow_url
+            )
+        )
+        session.launch_flow(code_response=code_response)
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    assert u'objectDescribe' in response
+
+    # Test that refresh token recovery works
+    session = SalesforceOAuth2Session(
+        get_oauth_info_not_localhost.oauth_client_id,
+        get_oauth_info_not_localhost.client_secret,
+        get_oauth_info_not_localhost.username,
+        sandbox=get_oauth_info_not_localhost.sandbox,
+        callback_settings=(
+            get_oauth_info_not_localhost.callback_url,
+            443
+        )
+    )
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    assert u'objectDescribe' in response
+
+    # Log out
+    response = session.logout()
+
+    success = True
+    try:
+        response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    except WebServerFlowNeeded as e:
+        success = False
+        assert str(e) == 'user logged out'
+    assert not success

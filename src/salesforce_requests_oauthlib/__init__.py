@@ -56,7 +56,6 @@ from psycopg2.extras import execute_values
 from psycopg2.extensions import AsIs
 
 
-
 default_token_path = \
     os.path.expanduser('~/.salesforce_requests_oauthlib')
 
@@ -71,6 +70,10 @@ authorization_url_template = base_url_template.format(
 
 token_url_template = base_url_template.format(
     'token'
+)
+
+revoke_url_template = base_url_template.format(
+    'revoke'
 )
 
 
@@ -134,10 +137,16 @@ class PostgresStorage(TokenStorageMechanism):
             schema_count = pg_cursor.fetchone()[0]
 
             if schema_count == 0:
-                pg_cursor.execute('CREATE SCHEMA %s', (AsIs(self.schema_name),))
+                pg_cursor.execute(
+                    'CREATE SCHEMA %s',
+                    (AsIs(self.schema_name),)
+                )
                 pg_conn.commit()
 
-            pg_cursor.execute('SET search_path TO %s', (AsIs(self.schema_name),))
+            pg_cursor.execute(
+                'SET search_path TO %s',
+                (AsIs(self.schema_name),)
+            )
 
             pg_cursor.execute(
                 'SELECT COUNT(*) '
@@ -163,8 +172,13 @@ class PostgresStorage(TokenStorageMechanism):
     def store(self, tokens):
         with psycopg2.connect(self.database_uri, sslmode='require') as pg_conn:
             pg_cursor = pg_conn.cursor()
-            pg_cursor.execute('SET search_path TO %s', (AsIs(self.schema_name),))
-            insert_stmt = '{0} %s ON CONFLICT (username) DO UPDATE SET refresh_token = EXCLUDED.refresh_token'.format(
+            pg_cursor.execute(
+                'SET search_path TO %s',
+                (AsIs(self.schema_name),)
+            )
+            insert_stmt = '{0} %s ON CONFLICT (username) DO UPDATE '\
+                          'SET refresh_token = EXCLUDED.refresh_token'
+            insert_stmt = insert_stmt.format(
                 pg_cursor.mogrify(
                     'INSERT INTO %s (username, refresh_token) VALUES',
                     (AsIs(self.table_name),)
@@ -183,7 +197,10 @@ class PostgresStorage(TokenStorageMechanism):
         # DB access
         with psycopg2.connect(self.database_uri, sslmode='require') as pg_conn:
             pg_cursor = pg_conn.cursor()
-            pg_cursor.execute('SET search_path TO %s', (AsIs(self.schema_name),))
+            pg_cursor.execute(
+                'SET search_path TO %s',
+                (AsIs(self.schema_name),)
+            )
             pg_cursor.execute(
                 'SELECT username, refresh_token FROM %s',
                 (AsIs(self.table_name),)
@@ -217,41 +234,48 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 class SalesforceOAuth2Session(OAuth2Session):
     def __init__(self, client_id, client_secret, username,
                  sandbox=False,
-                 local_server_settings=('localhost', 60443),
+                 callback_settings=None,
+                 local_server_settings=None,
                  password=None,
                  ignore_cached_refresh_tokens=False,
                  version=None,
                  custom_domain=None,
                  oauth2client=None,
-                 token_storage=None):
+                 token_storage=None,
+                 force_web_server_flow=False):
 
         self.client_secret = client_secret
         self.username = username
         self.password = password
-        self.local_server_settings = local_server_settings
-        if custom_domain is not None:
-            self.token_url = token_url_template.format(
-                '{0}.my'.format(custom_domain)
-            )
-            self.authorization_url_location = authorization_url_template.format(
-                '{0}.my'.format(custom_domain)
-            )
-        else:
-            self.token_url = token_url_template.format(
-                'test' if sandbox else 'login'
-            )
-            # Avoid name collision
-            self.authorization_url_location = authorization_url_template.format(
-                'test' if sandbox else 'login'
-            )
+
+        self.force_web_server_flow = force_web_server_flow
+
+        self.auth_flow_in_progress = False
+
+        # for backward compatibility
+        self.callback_settings = callback_settings
+        if self.callback_settings is None:
+            if local_server_settings is None:
+                self.callback_settings = ('localhost', 60443)
+            else:
+                self.callback_settings = local_server_settings
+
+        self.custom_domain = custom_domain
+        self.sandbox = sandbox
+
+        self.token_url = self._insert_domain(token_url_template)
+        self.authorization_url_location = self._insert_domain(
+            authorization_url_template
+        )
 
         # NOTE: even though this says https://, if the Salesforce connected
         # app's Callback URL uses http://localhost, SF will redirect to
         # http://localhost, so the non-HTTPS HTTPServer() in
         # launch_webbrowser_flow() will still work
-        self.callback_url = 'https://{0}:{1}'.format(
-            self.local_server_settings[0],
-            str(self.local_server_settings[1])
+        port = self.callback_settings[1]
+        self.callback_url = 'https://{0}{1}'.format(
+            self.callback_settings[0],
+            ':{0}'.format(str(port)) if port != 443 else ''
         )
 
         if oauth2client:
@@ -289,6 +313,10 @@ class SalesforceOAuth2Session(OAuth2Session):
                     refresh_token = saved_refresh_tokens[self.username]
 
             if refresh_token is None:
+                if self.password is None and not self._callback_is_localhost():
+                    # Don't launch web server flow
+                    return
+
                 self.launch_flow()
             else:
                 self.token = {
@@ -300,14 +328,48 @@ class SalesforceOAuth2Session(OAuth2Session):
                 self.refresh_token()
 
         self.version = version
-        if self.version is None:
-            self.use_latest_version()
 
-    def launch_flow(self):
-        if self.password is None:
+    def _insert_domain(self, template):
+        if self.custom_domain is not None:
+            return template.format(
+                '{0}.my'.format(self.custom_domain)
+            )
+        else:
+            return template.format(
+                'test' if self.sandbox else 'login'
+            )
+
+    def _callback_is_localhost(self):
+        return not self.force_web_server_flow and (
+            self.callback_settings[0] == 'localhost' or
+            self.callback_settings[0] == '127.0.0.1'
+        )
+
+    def launch_flow(self, code_response=None):
+        if self.password is not None:
+            self.launch_password_flow()
+            return
+
+        if code_response is None:
             self.launch_webbrowser_flow()
         else:
-            self.launch_password_flow()
+            self.fetch_token(
+                token_url=self.token_url,
+                authorization_response=code_response,
+                client_id=self.client_id,
+                client_secret=self.client_secret
+            )
+
+        saved_refresh_tokens = self.token_storage.retrieve()
+
+        saved_refresh_tokens[self.username] = self.token['refresh_token']
+
+        self.token_storage.store(saved_refresh_tokens)
+
+    def fetch_token(self, *args, **kwargs):
+        self.auth_flow_in_progress = True
+        super(SalesforceOAuth2Session, self).fetch_token(*args, **kwargs)
+        self.auth_flow_in_progress = False
 
     def refresh_token(self):
         try:
@@ -317,10 +379,18 @@ class SalesforceOAuth2Session(OAuth2Session):
                 client_secret=self.client_secret
             )
         except InvalidGrantError:
-            self.launch_flow()
+            raise WebServerFlowNeeded(
+                'Reauthentication needed',
+                self.authorization_url()
+            )
 
     def use_latest_version(self):
         self.version = self.get('/services/data/').json()[-1]['version']
+
+    def authorization_url(self):
+        return super(SalesforceOAuth2Session, self).authorization_url(
+            self.authorization_url_location
+        )[0]
 
     def launch_webbrowser_flow(self):
         # Right now the webbrowser module doesn't properly open chrome when
@@ -329,23 +399,19 @@ class SalesforceOAuth2Session(OAuth2Session):
         if sys.platform == 'darwin':
             browser = webbrowser.get('safari')
             browser.open(
-                self.authorization_url(
-                    self.authorization_url_location
-                )[0],
+                self.authorization_url(),
                 new=2,
                 autoraise=True
             )
         else:
             webbrowser.open(
-                self.authorization_url(
-                    self.authorization_url_location
-                )[0],
+                self.authorization_url(),
                 new=2,
                 autoraise=True
             )
 
         httpd = BaseHTTPServer.HTTPServer(
-            self.local_server_settings,
+            self.callback_settings,
             RequestHandler
         )
 
@@ -361,12 +427,6 @@ class SalesforceOAuth2Session(OAuth2Session):
             client_secret=self.client_secret
         )
 
-        saved_refresh_tokens = self.token_storage.retrieve()
-
-        saved_refresh_tokens[self.username] = self.token['refresh_token']
-
-        self.token_storage.store(saved_refresh_tokens)
-
     def launch_password_flow(self):
         self.fetch_token(
             token_url=self.token_url,
@@ -376,7 +436,37 @@ class SalesforceOAuth2Session(OAuth2Session):
             password=self.password
         )
 
+    def logout(self, refresh_token=False):
+        response = self.post(
+            revoke_url_template.format(
+                'test' if self.sandbox else 'login'
+            ),
+            data={
+                'token': self.token['refresh_token']
+            }
+        )
+        if response.status_code == 200:
+            saved_refresh_tokens = self.token_storage.retrieve()
+            del saved_refresh_tokens[self.username]
+            self.token_storage.store(saved_refresh_tokens)
+            self.access_token = None
+        else:
+            raise Exception(str(response.status_code) + ' ' + response.text)
+
     def request(self, *args, **kwargs):
+        if not self.auth_flow_in_progress:
+            if self.access_token is None:
+                raise WebServerFlowNeeded(
+                    'user logged out',
+                    self.authorization_url()
+                )
+
+            if len(self.token) == 0:
+                raise WebServerFlowNeeded(
+                    'no token available',
+                    self.authorization_url()
+                )
+
         version_substitution = True
         if 'version_substitution' in kwargs:
             version_substitution = kwargs['version_substitution']
@@ -385,11 +475,13 @@ class SalesforceOAuth2Session(OAuth2Session):
         url = args[1]
 
         if version_substitution:
-            url = url.replace('vXX.X', 'v{0}'.format(
-                str(self.version))
-                    if hasattr(self, 'version') and self.version is not None
-                    else ''
-            )
+            if 'vXX.X' in url:
+                if not hasattr(self, 'version') or self.version is None:
+                    self.use_latest_version()
+
+                url = url.replace('vXX.X', 'v{0}'.format(
+                    self.version
+                ))
 
         if 'instance_url' in self.token and url.startswith('/'):
             # Then it's relative
@@ -405,3 +497,9 @@ class SalesforceOAuth2Session(OAuth2Session):
             *args[2:],
             **kwargs
         )
+
+
+class WebServerFlowNeeded(Exception):
+    def __init__(self, message, flow_url):
+        super(WebServerFlowNeeded, self).__init__(message)
+        self.flow_url = flow_url
