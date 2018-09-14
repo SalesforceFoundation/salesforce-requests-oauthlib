@@ -1,6 +1,15 @@
 News
 ====
 
+0.1.6
+---
+
+*Release date: 2018-09-13*
+
+* Support web server flow - see the test for example
+
+* New query method
+
 0.1.5
 ---
 
