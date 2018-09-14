@@ -453,6 +453,32 @@ class SalesforceOAuth2Session(OAuth2Session):
         else:
             raise Exception(str(response.status_code) + ' ' + response.text)
 
+    def query(self, query_string, api_version='XX.X',
+              get_entire_response=True):
+
+        query_response = self.get(
+            '/services/data/v{0}/query/'.format(
+                api_version
+            ),
+            params={
+                'q': query_string
+            }
+        ).json()
+
+        if not get_entire_response:
+            return query_response
+
+        to_return = []
+        while True:
+            to_return.extend(query_response['records'])
+
+            if query_response['done']:
+                break
+            else:
+                query_response = self.get(query_response['nextRecordsUrl'])
+
+        return to_return
+
     def request(self, *args, **kwargs):
         if not self.auth_flow_in_progress:
             if self.access_token is None:
