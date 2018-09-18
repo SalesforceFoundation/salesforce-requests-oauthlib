@@ -4,6 +4,13 @@ News
 0.1.6
 ---
 
+*Release date: 2018-09-18*
+
+* Correctly handle ports in callback url
+
+0.1.6
+---
+
 *Release date: 2018-09-13*
 
 * Support web server flow - see the test for example
