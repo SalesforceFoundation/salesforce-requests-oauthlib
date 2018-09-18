@@ -51,6 +51,7 @@ from oauthlib.oauth2.rfc6749.clients import ServiceApplicationClient
 from abc import ABCMeta
 from abc import abstractmethod
 import six
+from six.moves.urllib.parse import urlparse
 import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2.extensions import AsIs
@@ -273,10 +274,15 @@ class SalesforceOAuth2Session(OAuth2Session):
         # http://localhost, so the non-HTTPS HTTPServer() in
         # launch_webbrowser_flow() will still work
         port = self.callback_settings[1]
-        self.callback_url = 'https://{0}{1}'.format(
-            self.callback_settings[0],
-            ':{0}'.format(str(port)) if port != 443 else ''
-        )
+        callback_parse_result = urlparse('https://{0}'.format(
+            self.callback_settings[0]
+        ))
+        if port != 443:
+            callback_parse_result._replace(netloc='{0}:{1}'.format(
+                callback_parse_result.netloc,
+                str(port)
+            ))
+        self.callback_url = callback_parse_result.geturl()
 
         if oauth2client:
             client = oauth2client
