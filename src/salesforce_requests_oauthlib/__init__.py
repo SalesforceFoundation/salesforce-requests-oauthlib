@@ -460,7 +460,7 @@ class SalesforceOAuth2Session(OAuth2Session):
             raise Exception(str(response.status_code) + ' ' + response.text)
 
     def query(self, query_string, api_version='XX.X',
-              get_entire_response=True):
+              follow_next_records_url=True):
 
         query_response = self.get(
             '/services/data/v{0}/query/'.format(
@@ -471,7 +471,7 @@ class SalesforceOAuth2Session(OAuth2Session):
             }
         ).json()
 
-        if not get_entire_response:
+        if not follow_next_records_url:
             return query_response
 
         to_return = []
@@ -481,7 +481,9 @@ class SalesforceOAuth2Session(OAuth2Session):
             if query_response['done']:
                 break
             else:
-                query_response = self.get(query_response['nextRecordsUrl'])
+                query_response = self.get(
+                    query_response['nextRecordsUrl']
+                ).json()
 
         return to_return
 
