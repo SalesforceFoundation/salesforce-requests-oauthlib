@@ -1,7 +1,14 @@
 News
 ====
 
-0.1.6
+0.1.8
+---
+
+*Release date: 2018-09-22*
+
+* Fix query method use of nextRecordsUrl; kwarg now more description (note small but breaking API change to query())
+
+0.1.7
 ---
 
 *Release date: 2018-09-18*
