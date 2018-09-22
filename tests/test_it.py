@@ -153,7 +153,7 @@ def test_password_flow(get_oauth_info):
 
     query_response = session.query(
         'SELECT Id FROM Account',
-        get_entire_response=False
+        follow_next_records_url=False
     )
     assert u'totalSize' in query_response and u'records' in query_response
 
