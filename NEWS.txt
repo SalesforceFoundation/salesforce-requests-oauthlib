@@ -1,6 +1,13 @@
 News
 ====
 
+0.1.10
+---
+
+*Release date: 2018-09-24*
+
+* Allow instantiation of session with bad refresh token
+
 0.1.9
 ---
 
