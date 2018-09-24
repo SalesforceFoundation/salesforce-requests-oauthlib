@@ -267,6 +267,12 @@ class SalesforceOAuth2Session(OAuth2Session):
 
         self.auth_flow_in_progress = False
 
+        # refresh_token() raises an exception if the saved refresh token is
+        # no longer good.  If we are using the web server flow, we still want
+        # to return the new instance from this constructor, and this is how we
+        # tell the caller a re-auth is required.
+        self.bad_session = False
+
         # for backward compatibility
         self.callback_settings = callback_settings
         if self.callback_settings is None:
@@ -333,7 +339,7 @@ class SalesforceOAuth2Session(OAuth2Session):
                     refresh_token = saved_refresh_tokens[self.username]
 
             if refresh_token is None:
-                if self.password is None and not self._callback_is_localhost():
+                if self._using_web_server_flow():
                     # Don't launch web server flow
                     return
 
@@ -345,7 +351,13 @@ class SalesforceOAuth2Session(OAuth2Session):
                     'access_token': 'Would you eat them in a box?'
                 }
 
-                self.refresh_token()
+                try:
+                    self.refresh_token()
+                except WebServerFlowNeeded:
+                    if self._using_web_server_flow():
+                        self.bad_session = True
+                    else:
+                        self.launch_flow()
 
         self.version = version
 
@@ -358,6 +370,9 @@ class SalesforceOAuth2Session(OAuth2Session):
             return template.format(
                 'test' if self.sandbox else 'login'
             )
+
+    def _using_web_server_flow(self):
+        return self.password is None and not self._callback_is_localhost()
 
     def _callback_is_localhost(self):
         return not self.force_web_server_flow and (
@@ -531,13 +546,19 @@ class SalesforceOAuth2Session(OAuth2Session):
                     self.version
                 ))
 
-        if 'instance_url' in self.token and url.startswith('/'):
+        if url.startswith('/'):
             # Then it's relative
-            # We append the instance_url for convenience
-            url = '{0}{1}'.format(
-                self.token['instance_url'],
-                url
-            )
+            if 'instance_url' in self.token:
+                # We append the instance_url for convenience
+                url = '{0}{1}'.format(
+                    self.token['instance_url'],
+                    url
+                )
+            else:
+                raise WebServerFlowNeeded(
+                    'no token available',
+                    self.authorization_url()
+                )
 
         return super(SalesforceOAuth2Session, self).request(
             args[0],

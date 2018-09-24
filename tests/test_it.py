@@ -138,14 +138,16 @@ def test_jwt_bearer_token_flow(get_oauth_info):
 
 
 def test_password_flow(get_oauth_info):
+    password = getpass('Enter password for {0}: '.format(
+        get_oauth_info.username
+    ))
+
     session = SalesforceOAuth2Session(
         get_oauth_info.oauth_client_id,
         get_oauth_info.client_secret,
         get_oauth_info.username,
         sandbox=get_oauth_info.sandbox,
-        password=getpass('Enter password for {0}: '.format(
-            get_oauth_info.username
-        )),
+        password=password,
         ignore_cached_refresh_tokens=True
     )
     response = session.get('/services/data/vXX.X/sobjects/Contact').json()
@@ -185,6 +187,19 @@ def test_webbrowser_flow(get_oauth_info):
     response = session.get('/services/data/v{0}/sobjects/Contact'.format(
         newest_version['version']
     )).json()
+    assert u'objectDescribe' in response
+
+    tokens = session.token_storage.retrieve()
+    tokens[get_oauth_info.username] = 'bad token'
+    session.token_storage.store(tokens)
+
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox
+    )
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
 
 
@@ -346,3 +361,56 @@ def test_web_server_flow(get_oauth_info_not_localhost):
     # Make sure the token is gone from storage
     stored_tokens = session.token_storage.retrieve()
     assert get_oauth_info_not_localhost.username not in stored_tokens
+
+
+def test_web_server_flow_bad_session(get_oauth_info_not_localhost):
+    session = SalesforceOAuth2Session(
+        get_oauth_info_not_localhost.oauth_client_id,
+        get_oauth_info_not_localhost.client_secret,
+        get_oauth_info_not_localhost.username,
+        sandbox=get_oauth_info_not_localhost.sandbox,
+        ignore_cached_refresh_tokens=True,
+        force_web_server_flow=True,
+        callback_settings=(
+            get_oauth_info_not_localhost.callback_url,
+            443
+        )
+    )
+
+    try:
+        response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    except WebServerFlowNeeded as e:
+        code_response = getpass(
+            'Go to\n\n{0}\n\nwith your browser, and after logging in, '
+            'paste the resulting url here: '.format(
+                e.flow_url
+            )
+        )
+        session.launch_flow(code_response=code_response)
+    response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    assert u'objectDescribe' in response
+
+    tokens = session.token_storage.retrieve()
+    tokens[get_oauth_info_not_localhost.username] = 'bad token'
+    session.token_storage.store(tokens)
+
+    # Test that we find out our session is bad
+    session = SalesforceOAuth2Session(
+        get_oauth_info_not_localhost.oauth_client_id,
+        get_oauth_info_not_localhost.client_secret,
+        get_oauth_info_not_localhost.username,
+        sandbox=get_oauth_info_not_localhost.sandbox,
+        callback_settings=(
+            get_oauth_info_not_localhost.callback_url,
+            443
+        )
+    )
+    assert session.bad_session
+
+    success = True
+    try:
+        response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    except WebServerFlowNeeded as e:
+        success = False
+        assert str(e) == 'no token available'
+    assert not success
