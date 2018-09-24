@@ -1,6 +1,13 @@
 News
 ====
 
+0.1.9
+---
+
+*Release date: 2018-09-24*
+
+* Postgres token storage now deletes entries on logout
+
 0.1.8
 ---
 
