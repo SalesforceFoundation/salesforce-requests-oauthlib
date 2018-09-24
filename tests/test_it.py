@@ -261,6 +261,21 @@ def test_postgres_token_storage(get_oauth_info):
     )).json()
     assert u'objectDescribe' in response
 
+    # Log out
+    response = session.logout()
+
+    success = True
+    try:
+        response = session.get('/services/data/vXX.X/sobjects/Contact').json()
+    except WebServerFlowNeeded as e:
+        success = False
+        assert str(e) == 'user logged out'
+    assert not success
+
+    # Make sure the token is gone from storage
+    stored_tokens = token_storage.retrieve()
+    assert get_oauth_info.username not in stored_tokens
+
 
 def test_webbrowser_flow_with_custom_domain(get_oauth_info):
     session = SalesforceOAuth2Session(
@@ -327,3 +342,7 @@ def test_web_server_flow(get_oauth_info_not_localhost):
         success = False
         assert str(e) == 'user logged out'
     assert not success
+
+    # Make sure the token is gone from storage
+    stored_tokens = session.token_storage.retrieve()
+    assert get_oauth_info_not_localhost.username not in stored_tokens
