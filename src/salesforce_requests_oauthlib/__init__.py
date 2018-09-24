@@ -191,9 +191,22 @@ class PostgresStorage(TokenStorageMechanism):
                 tokens.items()
             )
 
-    def retrieve(self):
-        to_return = {}
+            new_tokens = self._retrieve_with_cursor(pg_cursor)
 
+            usernames_to_delete = tuple(
+                set(new_tokens.keys()) - set(tokens.keys())
+            )
+
+            if len(usernames_to_delete) > 0:
+                pg_cursor.execute(
+                    'DELETE FROM %s WHERE username in %s',
+                    (
+                        AsIs(self.table_name),
+                        usernames_to_delete
+                    )
+                )
+
+    def retrieve(self):
         # We'll reconnect every time, because it might be a long time between
         # DB access
         with psycopg2.connect(self.database_uri, sslmode='require') as pg_conn:
@@ -202,15 +215,16 @@ class PostgresStorage(TokenStorageMechanism):
                 'SET search_path TO %s',
                 (AsIs(self.schema_name),)
             )
-            pg_cursor.execute(
-                'SELECT username, refresh_token FROM %s',
-                (AsIs(self.table_name),)
-            )
 
-            for result in pg_cursor.fetchall():
-                to_return[result[0]] = result[1]
+            return self._retrieve_with_cursor(pg_cursor)
 
-        return to_return
+    def _retrieve_with_cursor(self, pg_cursor):
+        pg_cursor.execute(
+            'SELECT username, refresh_token FROM %s',
+            (AsIs(self.table_name),)
+        )
+
+        return {result[0]: result[1] for result in pg_cursor.fetchall()}
 
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
