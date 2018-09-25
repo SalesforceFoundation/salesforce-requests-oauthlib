@@ -480,13 +480,16 @@ class SalesforceOAuth2Session(OAuth2Session):
                 'token': self.token['refresh_token']
             }
         )
-        if response.status_code == 200:
-            saved_refresh_tokens = self.token_storage.retrieve()
-            del saved_refresh_tokens[self.username]
-            self.token_storage.store(saved_refresh_tokens)
-            self.access_token = None
-        else:
-            raise Exception(str(response.status_code) + ' ' + response.text)
+
+        saved_refresh_tokens = self.token_storage.retrieve()
+        del saved_refresh_tokens[self.username]
+        self.token_storage.store(saved_refresh_tokens)
+        self.access_token = None
+
+        if response.status_code != 200:
+            raise LogoutException(
+                str(response.status_code) + ' ' + response.text
+            )
 
     def query(self, query_string, api_version='XX.X',
               follow_next_records_url=True):
@@ -566,6 +569,10 @@ class SalesforceOAuth2Session(OAuth2Session):
             *args[2:],
             **kwargs
         )
+
+
+class LogoutException(Exception):
+    pass
 
 
 class WebServerFlowNeeded(Exception):
