@@ -395,11 +395,14 @@ class SalesforceOAuth2Session(OAuth2Session):
                 client_secret=self.client_secret
             )
 
-        saved_refresh_tokens = self.token_storage.retrieve()
+        # Salesforce does not always return a refresh token
+        # Depending on App configuration
+        if 'refresh_token' in self.token:
+            saved_refresh_tokens = self.token_storage.retrieve()
 
-        saved_refresh_tokens[self.username] = self.token['refresh_token']
+            saved_refresh_tokens[self.username] = self.token['refresh_token']
 
-        self.token_storage.store(saved_refresh_tokens)
+            self.token_storage.store(saved_refresh_tokens)
 
     def fetch_token(self, *args, **kwargs):
         self.auth_flow_in_progress = True
