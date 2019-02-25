@@ -403,7 +403,11 @@ class SalesforceOAuth2Session(OAuth2Session):
 
     def fetch_token(self, *args, **kwargs):
         self.auth_flow_in_progress = True
-        super(SalesforceOAuth2Session, self).fetch_token(*args, **kwargs)
+        super(SalesforceOAuth2Session, self).fetch_token(
+            *args,
+            include_client_id=True,
+            **kwargs
+        )
         self.auth_flow_in_progress = False
 
     def refresh_token(self):
