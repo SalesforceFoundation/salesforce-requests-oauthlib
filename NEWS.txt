@@ -1,6 +1,13 @@
 News
 ====
 
+0.1.12
+---
+
+*Release date: 2019-02-25*
+
+* Support new dependency versions
+
 0.1.11
 ---
 
