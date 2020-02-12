@@ -55,6 +55,7 @@ from six.moves.urllib.parse import urlparse
 import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2.extensions import AsIs
+import logging
 
 
 default_token_path = \
@@ -284,6 +285,10 @@ class SalesforceOAuth2Session(OAuth2Session):
         self.custom_domain = custom_domain
         self.sandbox = sandbox
 
+        self.version = version
+        self.logger = logging.getLogger('salesforce-requests-oauthlib')
+        self.logger.setLevel(logging.CRITICAL)
+
         self.token_url = self._insert_domain(token_url_template)
         self.authorization_url_location = self._insert_domain(
             authorization_url_template
@@ -359,8 +364,6 @@ class SalesforceOAuth2Session(OAuth2Session):
                     else:
                         self.launch_flow()
 
-        self.version = version
-
     def _insert_domain(self, template):
         if self.custom_domain is not None:
             return template.format(
@@ -432,6 +435,13 @@ class SalesforceOAuth2Session(OAuth2Session):
         )[0]
 
     def launch_webbrowser_flow(self):
+        self.logger.critical(
+            'If a web browser did not pop up, please go to '
+            '{0} in your favorite web browser.'.format(
+                self.authorization_url()
+            )
+        )
+
         # Right now the webbrowser module doesn't properly open chrome when
         # it's the default browser on OS X.  As a workaround, force safari.
         import sys
@@ -541,8 +551,9 @@ class SalesforceOAuth2Session(OAuth2Session):
         if 'version_substitution' in kwargs:
             version_substitution = kwargs['version_substitution']
 
-        # Not checking the first two args for sanity - seems like overkill.
-        url = args[1]
+        url = kwargs.pop('url', None)
+        if url is None:
+            url = args[1]
 
         if version_substitution:
             if 'vXX.X' in url:
@@ -567,8 +578,9 @@ class SalesforceOAuth2Session(OAuth2Session):
                     self.authorization_url()
                 )
 
+        method = kwargs.pop('method', None)
         return super(SalesforceOAuth2Session, self).request(
-            args[0],
+            method if method is not None else args[0],
             url,
             *args[2:],
             **kwargs

@@ -38,6 +38,19 @@ from salesforce_requests_oauthlib import WebServerFlowNeeded
 from salesforce_requests_oauthlib import HiddenLocalStorage
 from salesforce_requests_oauthlib import PostgresStorage
 from oauthlib.oauth2 import ServiceApplicationClient
+import logging
+
+
+class GetpassHandler(logging.StreamHandler):
+    def emit(self, message):
+        # getpass() is smart about where it opens the input
+        # stream, so I'm using it for now.
+        getpass('{0} Hit Enter now to turn on the test web server!'.format(
+            self.format(message)
+        ))
+
+logger = logging.getLogger('salesforce-requests-oauthlib')
+logger.addHandler(GetpassHandler())
 
 test_settings_path = 'test_settings'
 

@@ -1,6 +1,14 @@
 News
 ====
 
+1.0.0
+---
+
+*Release date: 2020-02-05*
+
+* Drop py2 support
+* Support requests-oauthlib 1.3.0
+
 0.1.12
 ---
 
