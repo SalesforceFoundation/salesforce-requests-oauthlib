@@ -34,11 +34,13 @@ from collections import namedtuple
 import tempfile
 import os
 from salesforce_requests_oauthlib import SalesforceOAuth2Session
+from salesforce_requests_oauthlib import BulkQueryResultNotReadyException
 from salesforce_requests_oauthlib import WebServerFlowNeeded
 from salesforce_requests_oauthlib import HiddenLocalStorage
 from salesforce_requests_oauthlib import PostgresStorage
 from oauthlib.oauth2 import ServiceApplicationClient
 import logging
+from time import sleep
 
 
 class GetpassHandler(logging.StreamHandler):
@@ -48,6 +50,7 @@ class GetpassHandler(logging.StreamHandler):
         getpass('{0} Hit Enter now to turn on the test web server!'.format(
             self.format(message)
         ))
+
 
 logger = logging.getLogger('salesforce-requests-oauthlib')
 logger.addHandler(GetpassHandler())
@@ -216,6 +219,32 @@ def test_webbrowser_flow(get_oauth_info):
     assert u'objectDescribe' in response
 
 
+def test_bulk_query(get_oauth_info):
+    session = SalesforceOAuth2Session(
+        get_oauth_info.oauth_client_id,
+        get_oauth_info.client_secret,
+        get_oauth_info.username,
+        sandbox=get_oauth_info.sandbox
+    )
+
+    job_info = session.bulk_query('SELECT Id FROM User')
+    query_response = None
+    while True:
+        try:
+            query_response = session.retrieve_bulk_query_results(job_info)
+        except BulkQueryResultNotReadyException:
+            sleep(5)
+        else:
+            break
+
+    # We don't know what kind of data is in our org, so just make sure we
+    # got something back
+    assert len(query_response) > 0 and \
+        query_response[0]['attributes']['type'] == 'User'
+
+    assert session.bulk_job_is_closed(job_info)
+
+
 def test_custom_local_token_storage(get_oauth_info):
     # Yes, I know this circumvents the point of mkdtemp().  We want to test
     # the directory creation part of HiddenLocalStorage.
@@ -314,7 +343,6 @@ def test_webbrowser_flow_with_custom_domain(get_oauth_info):
         ignore_cached_refresh_tokens=True,
         custom_domain=get_oauth_info.custom_domain
     )
-    newest_version = session.get('/services/data/').json()[-1]
     response = session.get('/services/data/vXX.X/sobjects/Contact').json()
     assert u'objectDescribe' in response
 
