@@ -56,6 +56,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2.extensions import AsIs
 import logging
+import re
 
 
 default_token_path = \
@@ -288,6 +289,7 @@ class SalesforceOAuth2Session(OAuth2Session):
         self.version = version
         self.logger = logging.getLogger('salesforce-requests-oauthlib')
         self.logger.setLevel(logging.CRITICAL)
+        self.from_regex = re.compile(r'from (\w+)', flags=re.I)
 
         self.token_url = self._insert_domain(token_url_template)
         self.authorization_url_location = self._insert_domain(
@@ -505,6 +507,111 @@ class SalesforceOAuth2Session(OAuth2Session):
                 str(response.status_code) + ' ' + response.text
             )
 
+    def retrieve_bulk_query_results(self, query_info, api_version='XX.X'):
+        job_id, batch_id = query_info
+
+        batch_status_response = self.get(
+            '/services/async/{0}/job/{1}/batch/{2}'.format(
+                api_version,
+                job_id,
+                batch_id
+            ),
+            bulk=True
+        ).json()
+
+        records = []
+        if batch_status_response['state'] == 'Completed':
+            batch_results_response = self.get(
+                '/services/async/{0}/job/{1}/batch/{2}/result'.format(
+                    api_version,
+                    job_id,
+                    batch_id
+                ),
+                bulk=True
+            ).json()
+
+            for result_id in batch_results_response:
+                batch_result_response = self.get(
+                    '/services/async/{0}/job/{1}/batch/{2}/result/{3}'.format(
+                        api_version,
+                        job_id,
+                        batch_id,
+                        result_id
+                    ),
+                    bulk=True
+                ).json()
+                records.extend(batch_result_response)
+
+        elif batch_status_response['state'] == 'Queued' or \
+                batch_status_response['state'] == 'InProgress':
+
+            raise BulkQueryResultNotReadyException(
+                batch_status_response['state']
+            )
+        else:
+            self._close_bulk_job(job_id, api_version)
+            raise BulkQueryBatchFailedException(
+                job_id,
+                batch_status_response['state']
+            )
+
+        self._close_bulk_job(job_id, api_version)
+
+        return records
+
+    def _close_bulk_job(self, job_id, api_version='XX.X'):
+        return self.post(
+            '/services/async/{0}/job/{1}'.format(
+                api_version,
+                job_id
+            ),
+            json={
+                'state': 'Closed'
+            },
+            bulk=True
+        ).json()
+
+    def bulk_job_is_closed(self, job_id, api_version='XX.X'):
+        if isinstance(job_id, tuple):
+            job_id = job_id[0]
+
+        job_status_response = self.get(
+            '/services/async/{0}/job/{1}'.format(
+                api_version,
+                job_id
+            ),
+            bulk=True
+        ).json()
+        return job_status_response['state'] == 'Closed'
+
+    def bulk_query(self, query_string, api_version='XX.X'):
+        regex_result = self.from_regex.search(query_string)
+        if not regex_result:
+            raise BulkQueryException('Cannot find sobject name in query')
+
+        create_job_response = self.post(
+            '/services/async/{0}/job'.format(api_version),
+            json={
+                'operation': 'query',
+                'object': regex_result.group(1),
+                'contentType': 'JSON'
+            },
+            bulk=True
+        ).json()
+        job_id = create_job_response['id']
+
+        create_batch_response = self.post(
+            '/services/async/{0}/job/{1}/batch'.format(
+                api_version,
+                job_id
+            ),
+            data=query_string,
+            bulk=True
+        ).json()
+        batch_id = create_batch_response['id']
+
+        return (job_id, batch_id)
+
     def query(self, query_string, api_version='XX.X',
               follow_next_records_url=True):
 
@@ -555,14 +662,24 @@ class SalesforceOAuth2Session(OAuth2Session):
         if url is None:
             url = args[1]
 
+        bulk = kwargs.get('bulk', False)
+        if bulk:
+            if 'headers' not in kwargs:
+                kwargs['headers'] = {}
+            kwargs['headers']['X-SFDC-Session'] = self.access_token
+
         if version_substitution:
-            if 'vXX.X' in url:
+            version_placeholder = 'XX.X' if bulk else 'vXX.X'
+            if version_placeholder in url:
                 if not hasattr(self, 'version') or self.version is None:
                     self.use_latest_version()
 
-                url = url.replace('vXX.X', 'v{0}'.format(
+                url = url.replace(version_placeholder, '{0}{1}'.format(
+                    '' if bulk else 'v',
                     self.version
                 ))
+
+        kwargs.pop('bulk', None)
 
         if url.startswith('/'):
             # Then it's relative
@@ -589,6 +706,20 @@ class SalesforceOAuth2Session(OAuth2Session):
 
 class LogoutException(Exception):
     pass
+
+
+class BulkQueryException(Exception):
+    pass
+
+
+class BulkQueryResultNotReadyException(Exception):
+    pass
+
+
+class BulkQueryBatchFailedException(Exception):
+    def __init__(self, job_id, state):
+        self.job_id = job_id
+        self.state = state
 
 
 class WebServerFlowNeeded(Exception):
