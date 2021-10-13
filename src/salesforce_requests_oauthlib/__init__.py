@@ -523,7 +523,7 @@ class SalesforceOAuth2Session(OAuth2Session):
 
         return to_return
 
-    def request(self, *args, **kwargs):
+    def request(self, method, url, *args, **kwargs):
         if not self.auth_flow_in_progress:
             if self.access_token is None:
                 raise WebServerFlowNeeded(
@@ -540,9 +540,6 @@ class SalesforceOAuth2Session(OAuth2Session):
         version_substitution = True
         if 'version_substitution' in kwargs:
             version_substitution = kwargs['version_substitution']
-
-        # Not checking the first two args for sanity - seems like overkill.
-        url = args[1]
 
         if version_substitution:
             if 'vXX.X' in url:
@@ -568,9 +565,9 @@ class SalesforceOAuth2Session(OAuth2Session):
                 )
 
         return super(SalesforceOAuth2Session, self).request(
-            args[0],
+            method,
             url,
-            *args[2:],
+            *args,
             **kwargs
         )
 
